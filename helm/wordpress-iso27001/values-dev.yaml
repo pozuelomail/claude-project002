@@ -45,12 +45,12 @@ persistence:
 
 ingress:
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
 
 tls:
-  clusterIssuer: "letsencrypt-staging"
+  clusterIssuer: "letsencrypt-prod"
 
 # En dev: seguridad más permisiva para agilizar el desarrollo
 security:
