@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+    app.kubernetes.io/component: wordpress
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "wordpress-iso27001.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

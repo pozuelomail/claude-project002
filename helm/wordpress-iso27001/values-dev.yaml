@@ -1,0 +1,63 @@
+# =============================================================================
+# values-dev.yaml — Sobreescrituras para entorno DESARROLLO
+# Uso: helm upgrade --install ... -f values.yaml -f values-dev.yaml
+# =============================================================================
+
+global:
+  environment: dev
+
+site:
+  url: "wp-dev.qforexwin.com"
+  title: "WordPress DEV"
+
+wordpress:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "128m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  extraConfig: |
+    define('DISALLOW_FILE_EDIT', true);
+    define('FORCE_SSL_ADMIN', false);
+    define('WP_AUTO_UPDATE_CORE', false);
+    define('WP_DEBUG', true);
+    define('WP_DEBUG_LOG', true);
+    define('WP_DEBUG_DISPLAY', false);
+    define('SCRIPT_DEBUG', false);
+
+mariadb:
+  resources:
+    requests:
+      cpu: "64m"
+      memory: "128Mi"
+    limits:
+      cpu: "256m"
+      memory: "256Mi"
+
+persistence:
+  wordpress:
+    size: "5Gi"
+  mariadb:
+    size: "2Gi"
+
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+
+tls:
+  clusterIssuer: "letsencrypt-staging"
+
+# En dev: seguridad más permisiva para agilizar el desarrollo
+security:
+  networkPolicy:
+    enabled: true
+  podSecurityContext:
+    enabled: true
+
+autoscaling:
+  enabled: false

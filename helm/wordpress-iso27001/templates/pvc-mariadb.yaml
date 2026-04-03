@@ -1,0 +1,21 @@
+{{- if .Values.persistence.mariadb.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}-mariadb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+  annotations:
+    # ISO 27001 A.8.3 — Medios de soporte de información
+    description: "Volumen persistente de datos MariaDB. Requiere backup periódico."
+spec:
+  accessModes:
+    - {{ .Values.persistence.mariadb.accessMode }}
+  {{- if .Values.persistence.mariadb.storageClass }}
+  storageClassName: {{ .Values.persistence.mariadb.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.mariadb.size }}
+{{- end }}

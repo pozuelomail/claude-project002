@@ -1,0 +1,222 @@
+{{/*
+deployment-wordpress.yaml
+WordPress con hardening de seguridad y PHP endurecido
+ISO 27001 A.9 / A.12 / A.14
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+    app.kubernetes.io/component: wordpress
+spec:
+  replicas: {{ .Values.wordpress.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "wordpress-iso27001.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "wordpress-iso27001.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: wordpress
+      annotations:
+        # Forzar redeploy al cambiar el ConfigMap
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-wordpress.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "wordpress-iso27001.serviceAccountName" . }}
+      automountServiceAccountToken: false
+
+      {{- if .Values.security.podSecurityContext.enabled }}
+      securityContext:
+        runAsNonRoot: {{ .Values.security.podSecurityContext.wordpress.runAsNonRoot }}
+        fsGroup: {{ .Values.security.podSecurityContext.wordpress.fsGroup }}
+        seccompProfile:
+          type: {{ .Values.security.podSecurityContext.wordpress.seccompProfile.type }}
+      {{- end }}
+
+      # initContainer — copia ficheros de configuración antes de arrancar
+      initContainers:
+        - name: init-config
+          image: "{{ .Values.wordpress.image.repository }}:{{ .Values.wordpress.image.tag }}"
+          imagePullPolicy: {{ .Values.wordpress.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Copiando configuración PHP de seguridad..."
+              cp /tmp/php-security/php-security.ini /usr/local/etc/php/conf.d/99-security.ini
+              echo "Configuración PHP aplicada."
+          volumeMounts:
+            - name: php-security-config
+              mountPath: /tmp/php-security
+            - name: php-conf-d
+              mountPath: /usr/local/etc/php/conf.d
+          securityContext:
+            runAsUser: 0   # Necesita root para copiar a /usr/local/etc
+            allowPrivilegeEscalation: false
+
+      containers:
+        - name: wordpress
+          image: "{{ .Values.wordpress.image.repository }}:{{ .Values.wordpress.image.tag }}"
+          imagePullPolicy: {{ .Values.wordpress.image.pullPolicy }}
+
+          {{- if .Values.security.podSecurityContext.enabled }}
+          securityContext:
+            allowPrivilegeEscalation: {{ .Values.security.containerSecurityContext.wordpress.allowPrivilegeEscalation }}
+            capabilities:
+              drop: {{ toJson .Values.security.containerSecurityContext.wordpress.capabilities.drop }}
+          {{- end }}
+
+          env:
+            # Base de datos
+            - name: WORDPRESS_DB_HOST
+              value: {{ include "wordpress-iso27001.mariadb.serviceName" . }}:3306
+            - name: WORDPRESS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.mariadb.secretName" . }}
+                  key: mariadb-database
+            - name: WORDPRESS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.mariadb.secretName" . }}
+                  key: mariadb-username
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.mariadb.secretName" . }}
+                  key: mariadb-password
+            # Security Keys (ISO 27001 A.10.1.1)
+            - name: WORDPRESS_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.wordpress.secretName" . }}
+                  key: auth-key
+            - name: WORDPRESS_SECURE_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.wordpress.secretName" . }}
+                  key: secure-auth-key
+            - name: WORDPRESS_LOGGED_IN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.wordpress.secretName" . }}
+                  key: logged-in-key
+            - name: WORDPRESS_NONCE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.wordpress.secretName" . }}
+                  key: nonce-key
+            - name: WORDPRESS_AUTH_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.wordpress.secretName" . }}
+                  key: auth-salt
+            - name: WORDPRESS_SECURE_AUTH_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.wordpress.secretName" . }}
+                  key: secure-auth-salt
+            - name: WORDPRESS_LOGGED_IN_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.wordpress.secretName" . }}
+                  key: logged-in-salt
+            - name: WORDPRESS_NONCE_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.wordpress.secretName" . }}
+                  key: nonce-salt
+            # Configuración extra inyectada en wp-config.php
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                {{ .Values.wordpress.extraConfig | nindent 16 }}
+            # URL del sitio
+            - name: WORDPRESS_TABLE_PREFIX
+              value: "wp_"
+
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+
+          livenessProbe:
+            httpGet:
+              path: /wp-login.php
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ .Values.site.url }}
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          readinessProbe:
+            httpGet:
+              path: /wp-login.php
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ .Values.site.url }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            {{- toYaml .Values.wordpress.resources | nindent 12 }}
+
+          volumeMounts:
+            - name: wordpress-data
+              mountPath: /var/www/html/wp-content
+            - name: php-conf-d
+              mountPath: /usr/local/etc/php/conf.d/99-security.ini
+              subPath: 99-security.ini
+              readOnly: true
+            - name: htaccess-security
+              mountPath: /tmp/htaccess-security
+              readOnly: true
+
+      volumes:
+        - name: wordpress-data
+          {{- if .Values.persistence.wordpress.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "wordpress-iso27001.fullname" . }}-wordpress
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: php-security-config
+          configMap:
+            name: {{ include "wordpress-iso27001.fullname" . }}-config
+            items:
+              - key: php-security.ini
+                path: php-security.ini
+        - name: php-conf-d
+          emptyDir: {}
+        - name: htaccess-security
+          configMap:
+            name: {{ include "wordpress-iso27001.fullname" . }}-config
+            items:
+              - key: htaccess-security
+                path: .htaccess
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

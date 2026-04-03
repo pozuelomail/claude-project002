@@ -1,0 +1,104 @@
+{{/*
+configmap-wordpress.yaml
+Configuración extra de WordPress y php.ini hardening — ISO 27001 A.14
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+data:
+  # -------------------------------------------------------------------------
+  # php-security.ini — Hardening de PHP (ISO 27001 A.14.2.5)
+  # -------------------------------------------------------------------------
+  php-security.ini: |
+    ; Ocultar versión de PHP
+    expose_php = Off
+    ; Deshabilitar funciones peligrosas
+    disable_functions = exec,passthru,shell_exec,system,proc_open,popen,curl_exec,curl_multi_exec,parse_ini_file,show_source,phpinfo
+    ; Sesiones seguras
+    session.cookie_httponly = 1
+    session.cookie_secure = 1
+    session.use_only_cookies = 1
+    session.use_strict_mode = 1
+    session.cookie_samesite = Strict
+    session.gc_maxlifetime = 1440
+    ; Limitar subidas
+    upload_max_filesize = 64M
+    post_max_size = 64M
+    max_execution_time = 60
+    max_input_time = 60
+    memory_limit = 256M
+    ; Evitar path disclosure
+    display_errors = Off
+    log_errors = On
+    error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+
+  # -------------------------------------------------------------------------
+  # wp-security-extra.php — Snippet adicional para wp-config.php
+  # Se monta en /usr/local/etc/php/conf.d/ vía initContainer
+  # -------------------------------------------------------------------------
+  wp-extra-config.php: |
+    <?php
+    // ISO 27001 A.9.4 — Control de acceso a sistemas y aplicaciones
+    define('DISALLOW_FILE_EDIT', true);
+    define('FORCE_SSL_ADMIN', {{ if eq .Values.global.environment "dev" }}false{{ else }}true{{ end }});
+
+    // ISO 27001 A.12.6.1 — Gestión de vulnerabilidades técnicas
+    define('WP_AUTO_UPDATE_CORE', {{ if eq .Values.global.environment "pro" }}'minor'{{ else }}false{{ end }});
+
+    // Seguridad adicional
+    define('WP_POST_REVISIONS', 5);
+    define('EMPTY_TRASH_DAYS', 7);
+    define('WP_MEMORY_LIMIT', '256M');
+
+    // Deshabilitar XML-RPC si no se necesita (A.9.4.4)
+    // add_filter('xmlrpc_enabled', '__return_false');  // Activar en plugin
+
+    // Cookies seguras
+    @ini_set('session.cookie_httponly', true);
+    @ini_set('session.cookie_secure', true);
+    @ini_set('session.use_only_cookies', true);
+
+  # -------------------------------------------------------------------------
+  # .htaccess base — Hardening de Apache (ISO 27001 A.13 / A.14)
+  # -------------------------------------------------------------------------
+  htaccess-security: |
+    # BEGIN WordPress
+    <IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+    RewriteRule ^index\.php$ - [L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . /index.php [L]
+    </IfModule>
+    # END WordPress
+
+    # Bloquear acceso a ficheros sensibles
+    <FilesMatch "^(wp-config\.php|\.htaccess|\.htpasswd|readme\.html|license\.txt|xmlrpc\.php)$">
+      Require all denied
+    </FilesMatch>
+
+    # Bloquear listado de directorios
+    Options -Indexes
+
+    # Cabeceras de seguridad
+    <IfModule mod_headers.c>
+      Header always set X-Frame-Options "SAMEORIGIN"
+      Header always set X-XSS-Protection "1; mode=block"
+      Header always set X-Content-Type-Options "nosniff"
+      Header always set Referrer-Policy "strict-origin-when-cross-origin"
+      Header unset X-Powered-By
+      Header unset Server
+    </IfModule>
+
+    # Bloquear ataques comunes
+    <IfModule mod_rewrite.c>
+      RewriteCond %{QUERY_STRING} (\<|%3C).*script.*(\>|%3E) [NC,OR]
+      RewriteCond %{QUERY_STRING} GLOBALS(=|\[|\%[0-9A-Z]{0,2}) [OR]
+      RewriteCond %{QUERY_STRING} _REQUEST(=|\[|\%[0-9A-Z]{0,2})
+      RewriteRule ^(.*)$ index.php [F,L]
+    </IfModule>

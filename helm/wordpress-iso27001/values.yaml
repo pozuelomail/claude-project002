@@ -1,0 +1,209 @@
+# =============================================================================
+# values.yaml — Valores base (comunes a todos los entornos)
+# Las diferencias por entorno se sobreescriben en values-{dev,pre,pro}.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Global
+# -----------------------------------------------------------------------------
+global:
+  environment: dev          # dev | pre | pro
+  namespace: ""             # vacío = usa el release namespace
+
+# -----------------------------------------------------------------------------
+# Sitio WordPress
+# -----------------------------------------------------------------------------
+site:
+  url: "wp001.qforexwin.com"           # FQDN (sin https://)
+  title: "WordPress Site"
+  adminUser: "wpadmin"
+  adminEmail: "admin@example.com"
+  # adminPassword: se genera aleatoriamente si no se especifica (ver secret)
+  locale: "es_ES"
+
+# -----------------------------------------------------------------------------
+# WordPress
+# -----------------------------------------------------------------------------
+wordpress:
+  image:
+    repository: wordpress
+    tag: "6.4-php8.2-apache"
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "256m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  # Configuración extra que se inyecta en wp-config.php
+  extraConfig: |
+    define('DISALLOW_FILE_EDIT', true);
+    define('FORCE_SSL_ADMIN', true);
+    define('WP_AUTO_UPDATE_CORE', true);
+    define('DISALLOW_FILE_MODS', false);
+    define('WP_POST_REVISIONS', 5);
+    define('EMPTY_TRASH_DAYS', 7);
+    @ini_set('session.cookie_httponly', true);
+    @ini_set('session.cookie_secure', true);
+    @ini_set('session.use_only_cookies', true);
+
+# -----------------------------------------------------------------------------
+# MariaDB
+# -----------------------------------------------------------------------------
+mariadb:
+  image:
+    repository: mariadb
+    tag: "10.11"
+    pullPolicy: IfNotPresent
+  database: wordpress
+  username: wordpress
+  # password y rootPassword se generan en secret-mariadb.yaml
+  resources:
+    requests:
+      cpu: "128m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  args:
+    - "--character-set-server=utf8mb4"
+    - "--collation-server=utf8mb4_unicode_ci"
+    - "--skip-name-resolve"
+    - "--max_allowed_packet=256M"
+
+# -----------------------------------------------------------------------------
+# Persistencia
+# -----------------------------------------------------------------------------
+persistence:
+  wordpress:
+    enabled: true
+    size: "10Gi"
+    storageClass: ""          # "" = storageClass por defecto del cluster
+    accessMode: ReadWriteOnce
+  mariadb:
+    enabled: true
+    size: "5Gi"
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+# -----------------------------------------------------------------------------
+# Ingress
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # Las cabeceras de seguridad HTTP se gestionan a nivel de aplicación:
+    # - php-security.ini: expose_php=Off, session flags
+    # - .htaccess: mod_headers (X-Frame-Options, CSP, HSTS, etc.)
+    # - Plugin Really Simple SSL: HSTS en WordPress
+    # Esto evita depender de configuration-snippet (deshabilitado por defecto)
+
+# -----------------------------------------------------------------------------
+# TLS / cert-manager
+# -----------------------------------------------------------------------------
+tls:
+  enabled: true
+  clusterIssuer: "letsencrypt-prod"
+  secretName: ""            # vacío = autogenerado: {release}-tls
+
+# -----------------------------------------------------------------------------
+# Seguridad (ISO 27001)
+# -----------------------------------------------------------------------------
+security:
+  # NetworkPolicy — A.13.1.3 (Segregación de redes)
+  networkPolicy:
+    enabled: true
+  # PodSecurityContext — A.9.4 (Control de acceso a sistemas)
+  podSecurityContext:
+    enabled: true
+    wordpress:
+      # La imagen oficial WordPress arranca como root (entrypoint copia ficheros
+      # y arranca Apache que luego desciende a www-data). No se puede usar
+      # runAsUser/runAsGroup aquí; Apache gestiona el descenso de privilegios.
+      runAsNonRoot: false
+      fsGroup: 33           # Asegura que los volúmenes son accesibles por www-data
+      seccompProfile:
+        type: RuntimeDefault
+    mariadb:
+      runAsUser: 999        # mysql
+      runAsGroup: 999
+      fsGroup: 999
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+  # Capabilities — principio de mínimo privilegio
+  containerSecurityContext:
+    wordpress:
+      # WordPress/Apache necesita estas capabilities para arrancar correctamente
+      # como root y luego descender a www-data (CHOWN, SETUID, SETGID).
+      # Las capabilities peligrosas se eliminan explícitamente.
+      allowPrivilegeEscalation: true   # Necesario para Apache setuid
+      capabilities:
+        drop: ["NET_RAW", "SYS_ADMIN", "SYS_PTRACE", "SYS_MODULE", "SYS_RAWIO"]
+        add: []
+    mariadb:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      capabilities:
+        drop: ["ALL"]
+        add: ["CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE"]
+
+# -----------------------------------------------------------------------------
+# Plugins ISO 27001 — instalados vía WP-CLI Job
+# -----------------------------------------------------------------------------
+plugins:
+  install: true
+  # Cada plugin referencia su slug en WordPress.org
+  list:
+    # A.9  — Control de acceso / autenticación
+    - slug: "wp-2fa"
+      name: "WP 2FA"
+    - slug: "limit-login-attempts-reloaded"
+      name: "Limit Login Attempts Reloaded"
+    # A.10 — Criptografía / SSL
+    - slug: "really-simple-ssl"
+      name: "Really Simple SSL"
+    # A.12 — Operaciones / Auditoría / Backup
+    - slug: "wp-activity-log"
+      name: "WP Activity Log"
+    - slug: "updraftplus"
+      name: "UpdraftPlus Backup"
+    # A.12.2 / A.14 — Protección contra malware y hardening
+    - slug: "wordfence"
+      name: "Wordfence Security"
+    # A.18 — Cumplimiento / cookies / GDPR
+    - slug: "complianz-gdpr"
+      name: "Complianz GDPR"
+
+# -----------------------------------------------------------------------------
+# HPA (Horizontal Pod Autoscaler)
+# -----------------------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# -----------------------------------------------------------------------------
+# ServiceAccount
+# -----------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: ""                  # vacío = autogenerado
+
+# -----------------------------------------------------------------------------
+# Afinidad y toleraciones
+# -----------------------------------------------------------------------------
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,26 @@
+{{/*
+configmap-nginx-headers.yaml
+ConfigMap con cabeceras de seguridad HTTP para ser referenciado
+por el ingress-nginx controller via add-headers.
+ISO 27001 A.13.2.1 / A.14.2.5
+
+NOTA: Este ConfigMap se instala en el mismo namespace que el release.
+Para activarlo globalmente en el ingress-nginx controller, ver:
+docs/iso27001-controls.md — sección "Cabeceras HTTP"
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}-security-headers
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+  annotations:
+    description: "Cabeceras de seguridad HTTP — ISO 27001 A.13/A.14"
+data:
+  X-Frame-Options: "SAMEORIGIN"
+  X-XSS-Protection: "1; mode=block"
+  X-Content-Type-Options: "nosniff"
+  Referrer-Policy: "strict-origin-when-cross-origin"
+  Strict-Transport-Security: "max-age=31536000; includeSubDomains; preload"
+  Permissions-Policy: "camera=(), microphone=(), geolocation=(), payment=()"

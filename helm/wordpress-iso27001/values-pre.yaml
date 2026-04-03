@@ -1,0 +1,70 @@
+# =============================================================================
+# values-pre.yaml — Sobreescrituras para entorno PREPRODUCCIÓN
+# Uso: helm upgrade --install ... -f values.yaml -f values-pre.yaml
+# Similar a pro para validar configuración real antes de promover
+# =============================================================================
+
+global:
+  environment: pre
+
+site:
+  url: "wp-pre.qforexwin.com"
+  title: "WordPress PRE"
+
+wordpress:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: "256m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  extraConfig: |
+    define('DISALLOW_FILE_EDIT', true);
+    define('FORCE_SSL_ADMIN', true);
+    define('WP_AUTO_UPDATE_CORE', false);
+    define('WP_DEBUG', false);
+    define('WP_DEBUG_LOG', true);
+    define('WP_DEBUG_DISPLAY', false);
+    define('WP_POST_REVISIONS', 5);
+    define('EMPTY_TRASH_DAYS', 7);
+    @ini_set('session.cookie_httponly', true);
+    @ini_set('session.cookie_secure', true);
+    @ini_set('session.use_only_cookies', true);
+
+mariadb:
+  resources:
+    requests:
+      cpu: "128m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+persistence:
+  wordpress:
+    size: "10Gi"
+  mariadb:
+    size: "5Gi"
+
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+
+tls:
+  clusterIssuer: "letsencrypt-staging"
+
+security:
+  networkPolicy:
+    enabled: true
+  podSecurityContext:
+    enabled: true
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 2

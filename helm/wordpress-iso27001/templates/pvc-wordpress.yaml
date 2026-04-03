@@ -1,0 +1,20 @@
+{{- if .Values.persistence.wordpress.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}-wordpress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+  annotations:
+    description: "Volumen persistente WordPress (wp-content). Requiere backup periódico."
+spec:
+  accessModes:
+    - {{ .Values.persistence.wordpress.accessMode }}
+  {{- if .Values.persistence.wordpress.storageClass }}
+  storageClassName: {{ .Values.persistence.wordpress.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.wordpress.size }}
+{{- end }}

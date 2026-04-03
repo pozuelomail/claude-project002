@@ -1,0 +1,18 @@
+apiVersion: v2
+name: wordpress-iso27001
+description: >
+  WordPress desplegado en Kubernetes con hardening de seguridad
+  alineado a controles ISO 27001. Incluye instalación automática
+  de plugins de seguridad, NetworkPolicy, TLS forzado, RBAC
+  de mínimo privilegio y cabeceras HTTP de seguridad.
+type: application
+version: 1.0.0
+appVersion: "6.4"
+keywords:
+  - wordpress
+  - iso27001
+  - security
+  - kubernetes
+maintainers:
+  - name: equipo-tecnico
+home: https://github.com/equipo-tecnico/claude-test002

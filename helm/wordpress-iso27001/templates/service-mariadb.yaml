@@ -1,0 +1,25 @@
+{{/*
+service-mariadb.yaml
+Servicio ClusterIP para MariaDB — solo accesible dentro del cluster
+ISO 27001 A.13.1 (Gestión de la seguridad de redes)
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wordpress-iso27001.mariadb.serviceName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+  annotations:
+    # La base de datos NO debe ser accesible desde fuera del cluster
+    description: "ClusterIP interno. No exponer con LoadBalancer ni NodePort."
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "wordpress-iso27001.mariadb.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+      protocol: TCP

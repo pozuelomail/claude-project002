@@ -1,0 +1,27 @@
+{{/*
+certificate.yaml
+Certificado TLS gestionado por cert-manager — ISO 27001 A.10.1
+Requiere cert-manager instalado en el cluster con ClusterIssuer configurado.
+*/}}
+{{- if .Values.tls.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+  annotations:
+    # ISO 27001 A.10.1.1 — Uso de controles criptográficos
+    description: "Certificado TLS gestionado automáticamente por cert-manager."
+spec:
+  secretName: {{ include "wordpress-iso27001.tls.secretName" . }}
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - {{ .Values.site.url }}
+  # Renovación automática 30 días antes de expirar
+  renewBefore: 720h    # 30 días
+  duration: 2160h      # 90 días (estándar Let's Encrypt)
+{{- end }}

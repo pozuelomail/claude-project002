@@ -1,0 +1,128 @@
+{{/*
+deployment-mariadb.yaml
+MariaDB con hardening de seguridad — ISO 27001 A.12 / A.9
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}-mariadb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "wordpress-iso27001.mariadb.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate          # Recreate porque usa PVC RWO
+  template:
+    metadata:
+      labels:
+        {{- include "wordpress-iso27001.mariadb.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: database
+    spec:
+      serviceAccountName: {{ include "wordpress-iso27001.serviceAccountName" . }}
+      automountServiceAccountToken: false
+
+      {{- if .Values.security.podSecurityContext.enabled }}
+      securityContext:
+        runAsUser: {{ .Values.security.podSecurityContext.mariadb.runAsUser }}
+        runAsGroup: {{ .Values.security.podSecurityContext.mariadb.runAsGroup }}
+        fsGroup: {{ .Values.security.podSecurityContext.mariadb.fsGroup }}
+        runAsNonRoot: {{ .Values.security.podSecurityContext.mariadb.runAsNonRoot }}
+        seccompProfile:
+          type: {{ .Values.security.podSecurityContext.mariadb.seccompProfile.type }}
+      {{- end }}
+
+      containers:
+        - name: mariadb
+          image: "{{ .Values.mariadb.image.repository }}:{{ .Values.mariadb.image.tag }}"
+          imagePullPolicy: {{ .Values.mariadb.image.pullPolicy }}
+
+          {{- if .Values.security.podSecurityContext.enabled }}
+          securityContext:
+            allowPrivilegeEscalation: {{ .Values.security.containerSecurityContext.mariadb.allowPrivilegeEscalation }}
+            readOnlyRootFilesystem: {{ .Values.security.containerSecurityContext.mariadb.readOnlyRootFilesystem }}
+            capabilities:
+              drop: {{ toJson .Values.security.containerSecurityContext.mariadb.capabilities.drop }}
+              add: {{ toJson .Values.security.containerSecurityContext.mariadb.capabilities.add }}
+          {{- end }}
+
+          args: {{ toJson .Values.mariadb.args }}
+
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.mariadb.secretName" . }}
+                  key: mariadb-root-password
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.mariadb.secretName" . }}
+                  key: mariadb-database
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.mariadb.secretName" . }}
+                  key: mariadb-username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "wordpress-iso27001.mariadb.secretName" . }}
+                  key: mariadb-password
+
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+
+          # Health checks — ISO 27001 A.12.1 (Gestión de operaciones)
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "mysqladmin ping -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD}"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "mysqladmin ping -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD}"
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          resources:
+            {{- toYaml .Values.mariadb.resources | nindent 12 }}
+
+          volumeMounts:
+            - name: mariadb-data
+              mountPath: /var/lib/mysql
+
+      volumes:
+        - name: mariadb-data
+          {{- if .Values.persistence.mariadb.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "wordpress-iso27001.fullname" . }}-mariadb
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

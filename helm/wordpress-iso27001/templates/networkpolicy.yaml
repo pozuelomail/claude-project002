@@ -1,0 +1,185 @@
+{{/*
+networkpolicy.yaml
+Segregación de red — ISO 27001 A.13.1.3
+IMPORTANTE: Los selectores usan app.kubernetes.io/component para no afectar
+al wpcli-job pod, que comparte name/instance con WordPress.
+*/}}
+{{- if .Values.security.networkPolicy.enabled }}
+---
+# Política para pods WordPress (component=wordpress)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}-wordpress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+  annotations:
+    description: "ISO 27001 A.13.1.3 — Solo permite tráfico desde el ingress controller."
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "wordpress-iso27001.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: wordpress   # Selector específico, excluye wpcli-job
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Permitir desde el ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+    # Permitir desde el Job WP-CLI (mismo namespace)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: wpcli-job
+      ports:
+        - protocol: TCP
+          port: 80
+
+  egress:
+    # Conectar a MariaDB
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "wordpress-iso27001.mariadb.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: database
+      ports:
+        - protocol: TCP
+          port: 3306
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Internet (actualizaciones WordPress/plugins) — solo HTTPS
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Política para pods MariaDB (component=database)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}-mariadb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+  annotations:
+    description: "ISO 27001 A.13.1.3 — MariaDB solo acepta conexiones desde WordPress y WP-CLI."
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "wordpress-iso27001.mariadb.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: database    # Selector específico
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Desde WordPress y Job WP-CLI
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "wordpress-iso27001.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: wordpress
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: wpcli-job
+      ports:
+        - protocol: TCP
+          port: 3306
+
+  egress:
+    # Solo DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+
+---
+# Política para el Job WP-CLI (component=wpcli-job)
+# Egress explícito para conectar a WordPress (port 80) y MariaDB (port 3306)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}-wpcli
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: wpcli-job
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress: []   # El Job no recibe conexiones entrantes
+
+  egress:
+    # Conectar a WordPress en port 80
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "wordpress-iso27001.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: wordpress
+      ports:
+        - protocol: TCP
+          port: 80
+    # Conectar a MariaDB en port 3306 (WP-CLI necesita BD)
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "wordpress-iso27001.mariadb.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: database
+      ports:
+        - protocol: TCP
+          port: 3306
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Internet (descargar plugins desde WordPress.org)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

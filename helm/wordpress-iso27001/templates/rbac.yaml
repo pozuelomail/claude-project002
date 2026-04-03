@@ -1,0 +1,37 @@
+{{/*
+rbac.yaml
+Role y RoleBinding con mínimo privilegio — ISO 27001 A.9.2 / A.9.4
+El ServiceAccount de WordPress NO necesita acceso a la API de Kubernetes.
+Se crea un Role vacío para documentar la intención explícita.
+*/}}
+{{- if .Values.serviceAccount.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+  annotations:
+    # ISO 27001 A.9.2.3 — Gestión de privilegios de acceso
+    description: "Role de mínimo privilegio para WordPress. Sin acceso a API K8s."
+rules: []   # Sin permisos: principio de mínimo privilegio
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "wordpress-iso27001.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "wordpress-iso27001.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "wordpress-iso27001.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "wordpress-iso27001.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

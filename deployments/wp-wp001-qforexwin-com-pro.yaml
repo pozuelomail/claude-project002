@@ -1,0 +1,8 @@
+# Auto-generado — instancia wp001.qforexwin.com | entorno: pro
+site:
+  url: "wp001.qforexwin.com"
+  title: "WordPress wp001.qforexwin.com"
+  adminEmail: "admin@qforexwin.com"
+
+global:
+  environment: pro

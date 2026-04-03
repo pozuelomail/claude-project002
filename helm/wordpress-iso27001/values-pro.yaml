@@ -1,0 +1,81 @@
+# =============================================================================
+# values-pro.yaml — Sobreescrituras para entorno PRODUCCIÓN
+# Uso: helm upgrade --install ... -f values.yaml -f values-pro.yaml
+# ATENCIÓN: Requiere confirmación explícita antes de aplicar
+# =============================================================================
+
+global:
+  environment: pro
+
+site:
+  url: "wp001.qforexwin.com"
+  title: "WordPress"
+
+wordpress:
+  replicaCount: 2           # Alta disponibilidad en pro
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+  extraConfig: |
+    define('DISALLOW_FILE_EDIT', true);
+    define('DISALLOW_FILE_MODS', true);
+    define('FORCE_SSL_ADMIN', true);
+    define('WP_AUTO_UPDATE_CORE', 'minor');
+    define('WP_DEBUG', false);
+    define('WP_DEBUG_LOG', false);
+    define('WP_DEBUG_DISPLAY', false);
+    define('WP_POST_REVISIONS', 5);
+    define('EMPTY_TRASH_DAYS', 7);
+    @ini_set('session.cookie_httponly', true);
+    @ini_set('session.cookie_secure', true);
+    @ini_set('session.use_only_cookies', true);
+    define('WP_CACHE', true);
+
+mariadb:
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+persistence:
+  wordpress:
+    size: "20Gi"
+    storageClass: ""        # Ajustar al StorageClass de alta disponibilidad del cluster
+  mariadb:
+    size: "10Gi"
+    storageClass: ""
+
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
+
+tls:
+  enabled: true
+  clusterIssuer: "letsencrypt-prod"
+
+security:
+  networkPolicy:
+    enabled: true
+  podSecurityContext:
+    enabled: true
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
