@@ -183,6 +183,10 @@ spec:
               # Deshabilitar XML-RPC (vector de ataques frecuente)
               # (Se gestiona vía .htaccess y plugin Wordfence)
 
+              # Permitir indexación por motores de búsqueda (blog_public=1)
+              # Desactiva "Discourage search engines" en todos los entornos
+              $WP option update blog_public 1
+
               # Forzar contraseñas fuertes
               $WP option update require_name_email 1
 
