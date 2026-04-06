@@ -1,0 +1,11 @@
+# Auto-generado por deploy.sh — 2026-04-03T09:23:52Z
+# Instancia: dev.wp001.qforexwin.com | Entorno: dev
+# NO editar manualmente — regenerar con deploy.sh
+
+site:
+  url: "dev.wp001.qforexwin.com"
+  title: "WordPress dev.wp001.qforexwin.com"
+  adminEmail: "admin@dev.wp001.qforexwin.com"
+
+global:
+  environment: dev
